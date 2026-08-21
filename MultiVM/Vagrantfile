@@ -18,12 +18,6 @@ Vagrant.configure("2") do |config|
       yum install httpd wget unzip zip vim -y
       systemctl start httpd
       systemctl enable httpd
-      mkdir -p /tmp/nano
-      cd /tmp/nano
-      cp -r 2165_neon_carbon/* /var/www/html/ 2>/dev/null || echo "Brak folderu"
-      systemctl restart httpd
-      cd /tmp/
-      rm -rf /tmp/nano
     SHELL
   end
 
