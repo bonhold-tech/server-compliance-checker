@@ -131,7 +131,7 @@ def ubuntu_checklist():
                     print("Account expired:", ubuntu_consultant)
 
 
-def cent_checklist():
+def centos_checklist():
     """Execute the full security compliance audit checklist tailored for CentOS systems."""
     # Checking access and permissions for SSH and OS configuration
     try:
@@ -238,4 +238,4 @@ def cent_checklist():
 
 if __name__ == "__main__":
     ubuntu_checklist()
-    cent_checklist()
+    centos_checklist()
