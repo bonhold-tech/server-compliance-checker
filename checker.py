@@ -3,7 +3,6 @@ import platform
 import sys
 
 
-from pathlib import Path
 from audit import ubuntu_checklist
 from audit import centos_checklist
 

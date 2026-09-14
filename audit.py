@@ -1,7 +1,8 @@
 import os
 import subprocess
-from pathlib import Path
 import datetime
+
+from pathlib import Path
 
 
 def file_verify(filepath, expected_line, expected_value):
