@@ -1,8 +1,12 @@
+__version__ = "0.2.1"
 import os
 import subprocess
 import datetime
 
 from pathlib import Path
+
+SSHD_FILEPATH = Path("/etc/ssh/sshd_config")
+MISSING_FILE = "File not found."
 
 
 def file_verify(filepath, expected_line, expected_value):
@@ -26,24 +30,22 @@ def ubuntu_checklist():
     ubuntu_results = {}
     # Checking access and permissions for SSH and OS configuration
     try:
-        ubuntu_sshd = file_verify("/etc/ssh/sshd_config", "PermitRootLogin", "no")
+        ubuntu_sshd = file_verify(SSHD_FILEPATH, "PermitRootLogin", "no")
         ubuntu_results["sshd"] = ubuntu_sshd
     except FileNotFoundError:
-        ubuntu_results["sshd"] = "File not found."
+        ubuntu_results["sshd"] = MISSING_FILE
 
     try:
         ubuntu_os = file_verify("/etc/os-release", "NAME", "Ubuntu")
         ubuntu_results["os"] = ubuntu_os
     except FileNotFoundError:
-        ubuntu_results["os"] = "File not found."
+        ubuntu_results["os"] = MISSING_FILE
 
     try:
-        ubuntu_pass = file_verify(
-            "/etc/ssh/sshd_config", "PasswordAuthentication", "no"
-        )
+        ubuntu_pass = file_verify(SSHD_FILEPATH, "PasswordAuthentication", "no")
         ubuntu_results["password"] = ubuntu_pass
     except FileNotFoundError:
-        ubuntu_results["password"] = "File not found."
+        ubuntu_results["password"] = MISSING_FILE
 
     # Verifying Firewall status via UFW
     ubuntu_ufw = subprocess.run(["ufw", "status"], capture_output=True, text=True)
@@ -143,24 +145,22 @@ def centos_checklist():
 
     # Checking access and permissions for SSH and OS configuration
     try:
-        centos_sshd = file_verify("/etc/ssh/sshd_config", "PermitRootLogin", "no")
+        centos_sshd = file_verify(SSHD_FILEPATH, "PermitRootLogin", "no")
         centos_results["sshd"] = centos_sshd
     except FileNotFoundError:
-        centos_results["sshd"] = "File not found."
+        centos_results["sshd"] = MISSING_FILE
 
     try:
         centos = file_verify("/etc/os-release", "NAME", "CentOS")
         centos_results["os"] = centos
     except FileNotFoundError:
-        centos_results["os"] = "File not found."
+        centos_results["os"] = MISSING_FILE
 
     try:
-        centos_pass = file_verify(
-            "/etc/ssh/sshd_config", "PasswordAuthentication", "no"
-        )
+        centos_pass = file_verify(SSHD_FILEPATH, "PasswordAuthentication", "no")
         centos_results["password"] = centos_pass
     except FileNotFoundError:
-        centos_results["password"] = "File not found."
+        centos_results["password"] = MISSING_FILE
 
     # Verifying Firewall status via firewalld
     centos_firewalld = subprocess.run(
