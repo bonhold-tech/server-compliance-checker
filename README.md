@@ -1,5 +1,9 @@
 # Server Compliance Checker
 
+⚠️ Educational / portfolio project - built while learning Linux system administration and automation in Python. 
+This has not been extensively tested in production environments  -before running it on a real server, 
+review the code carefully, especially the --fix mode, which modifies system configuration files directly.
+
 A cross-platform security audit tool for Linux servers. It automatically detects
 the operating system (Ubuntu/Debian or CentOS/RHEL) and runs a compliance check
 adapted to that distribution's specific tooling and package management.
