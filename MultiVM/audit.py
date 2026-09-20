@@ -2,6 +2,7 @@ __version__ = "0.2.2"
 import os
 import subprocess
 import datetime
+import sys
 
 from pathlib import Path
 
@@ -49,7 +50,7 @@ def ubuntu_checklist():
 
     # Verifying Firewall status via UFW
     ubuntu_ufw = subprocess.run(["ufw", "status"], capture_output=True, text=True)
-    print("Firewall status:", ubuntu_ufw.stdout)
+    print("Firewall status:", ubuntu_ufw.stdout, file=sys.stderr)
 
     if "active" in ubuntu_ufw.stdout:
         firewall_status = "Pass"
@@ -63,12 +64,13 @@ def ubuntu_checklist():
         ubuntu_shadow = Path("/etc/shadow")
         ubuntu_perm = os.stat(ubuntu_shadow)
         ubuntu_restrict = oct(ubuntu_perm.st_mode)[-3:]
-        print("Permissions:", ubuntu_restrict)
+        print("Permissions:", ubuntu_restrict, file=sys.stderr)
         if "600" in ubuntu_restrict:
-            print("Pass")
+            print("Pass", file=sys.stderr)
         else:
             print(
-                "Fail, possible secuirty breach, due to file accessible for many groups/users."
+                "Fail, possible secuirty breach, due to file accessible for many groups/users.",
+                file=sys.stderr,
             )
         ubuntu_results["restrict"] = ubuntu_restrict
     except PermissionError as e:
@@ -79,12 +81,12 @@ def ubuntu_checklist():
         ubuntu_fail2ban = subprocess.run(
             ["systemctl", "status", "fail2ban"], capture_output=True, text=True
         )
-        print("File2ban status:", ubuntu_fail2ban.stdout)
+        print("File2ban status:", ubuntu_fail2ban.stdout, file=sys.stderr)
         ubuntu_split = ubuntu_fail2ban.stdout.splitlines()
         if "could not be found" in ubuntu_fail2ban.stderr:
             fail2ban_status = "Unit fail2ban.service could not be found."
         else:
-            print("Fail2ban installed.")
+            print("Fail2ban installed.", file=sys.stderr)
 
             for line in ubuntu_split:
                 if "active" in line.lower():
@@ -166,7 +168,7 @@ def centos_checklist():
     centos_firewalld = subprocess.run(
         ["systemctl", "status", "firewalld"], capture_output=True, text=True
     )
-    print("Firewall status:", centos_firewalld.stdout)
+    print("Firewall status:", centos_firewalld.stdout, file=sys.stderr)
 
     if "active" in centos_firewalld.stdout:
         firewall_status = "Pass"
@@ -189,12 +191,12 @@ def centos_checklist():
         centos_fail2ban = subprocess.run(
             ["systemctl", "status", "fail2ban"], capture_output=True, text=True
         )
-        print("File2ban status:", centos_fail2ban.stdout)
+        print("File2ban status:", centos_fail2ban.stdout, file=sys.stderr)
         centos_split = centos_fail2ban.stdout.splitlines()
         if "could not be found" in centos_fail2ban.stderr:
             fail2ban_status = "Unit fail2ban.service could not be found."
         else:
-            print("Fail2ban installed.")
+            print("Fail2ban installed.", file=sys.stderr)
 
             for line in centos_split:
                 if "active" in line.lower():
@@ -213,7 +215,7 @@ def centos_checklist():
     centos_update = subprocess.run(
         ["dnf", "check-update", "--security"], capture_output=True, text=True
     )
-    print("Update status:", centos_update.stdout)
+    print("Update status:", centos_update.stdout, file=sys.stderr)
 
     if centos_update.returncode == 0:
         update_status = "OS updated"
