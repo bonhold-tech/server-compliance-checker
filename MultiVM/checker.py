@@ -1,4 +1,4 @@
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 import subprocess
 import sys
 import json
@@ -52,10 +52,18 @@ else:
             "ssh",
             "web01",
             "-c",
-            "sudo python3 /vagrant/checker.py --inside-vm",
+            "sudo python3 /vagrant/checker.py --inside-vm 2>/dev/null",
         ],
         capture_output=True,
         text=True,
+    )
+    print(
+        "STDOUT:",
+        web01_json.stdout,
+        "STDERR:",
+        web01_json.stderr,
+        "RETURNCODE:",
+        web01_json.returncode,
     )
     web01_output = json.loads(web01_json.stdout)
 
@@ -68,7 +76,7 @@ else:
             "ssh",
             "db01",
             "-c",
-            "sudo python3 /vagrant/checker.py --inside-vm",
+            "sudo python3 /vagrant/checker.py --inside-vm 2>/dev/null",
         ],
         capture_output=True,
         text=True,
