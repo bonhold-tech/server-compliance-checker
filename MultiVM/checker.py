@@ -3,9 +3,13 @@ import subprocess
 import sys
 import json
 import datetime
+import os
+import smtplib
 from pathlib import Path
 from audit import ubuntu_checklist
 from audit import centos_checklist
+from dotenv import load_dotenv
+from email.mime.text import MIMEText
 
 
 def get_id_distro():
@@ -104,3 +108,30 @@ else:
         print("Invalid output.")
 
     print("\nAll virtual environments audited successfully.")
+
+    if "--notify" in sys.argv:
+        dotenv_file = Path(__file__)
+        vm_file = dotenv_file.parent
+        env_file = vm_file.parent / ".env"
+        load_dotenv(env_file)
+        json_report = json.dumps(vm_output, indent=2)
+
+        subject = "Audit report"
+        body = json_report
+        sender = os.environ["EMAIL_FROM"]
+        recipients = os.environ["EMAIL_TO"]
+        password = os.environ["SMTP_PASSWORD"]
+
+        def send_email(subject, body, sender, recipients, password):
+            msg = MIMEText(body)
+            msg["Subject"] = subject
+            msg["From"] = sender
+            msg["To"] = recipients
+            with smtplib.SMTP_SSL(
+                os.environ["SMTP_SERVER"], os.environ["SMTP_PORT"]
+            ) as smtp_server:
+                smtp_server.login(sender, password)
+                smtp_server.sendmail(sender, recipients, msg.as_string())
+            print("Message sent!")
+
+        send_email(subject, body, sender, recipients, password)
