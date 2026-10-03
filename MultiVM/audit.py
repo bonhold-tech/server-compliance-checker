@@ -1,4 +1,4 @@
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 import os
 import subprocess
 import datetime
@@ -32,9 +32,28 @@ def ubuntu_checklist():
     # Checking access and permissions for SSH and OS configuration
     try:
         ubuntu_sshd = file_verify(SSHD_FILEPATH, "PermitRootLogin", "no")
-        ubuntu_results["sshd"] = ubuntu_sshd
-    except FileNotFoundError:
-        ubuntu_results["sshd"] = MISSING_FILE
+        if ubuntu_sshd == "Pass":
+            sshd_needs_fix = False
+            sshd_comment = "PermitRootLogin turned off."
+            sshd_state = "No further action required."
+
+        else:
+            sshd_needs_fix = True
+            sshd_comment = "PermitRootLogin turned on."
+            sshd_state = "Action required."
+
+        ubuntu_results["sshd"] = {
+            "needs_fix": sshd_needs_fix,
+            "comment": sshd_comment,
+            "state": sshd_state,
+        }
+
+    except FileNotFoundError as e:
+        ubuntu_results["sshd"] = {
+            "needs_fix": True,
+            "comment": "PermitRootLogin not found.",
+            "state": f"Action required, {e}",
+        }
 
     try:
         ubuntu_os = file_verify("/etc/os-release", "NAME", "Ubuntu")
@@ -44,20 +63,53 @@ def ubuntu_checklist():
 
     try:
         ubuntu_pass = file_verify(SSHD_FILEPATH, "PasswordAuthentication", "no")
-        ubuntu_results["password"] = ubuntu_pass
-    except FileNotFoundError:
-        ubuntu_results["password"] = MISSING_FILE
+        if ubuntu_pass == "Pass":
+            pass_needs_fix = False
+            pass_comment = "PasswordAuthentication turned off."
+            pass_state = "No further action required."
+        else:
+            pass_needs_fix = True
+            pass_comment = "PasswordAuthentication turned on."
+            pass_state = "Action required."
+
+        ubuntu_results["password"] = {
+            "needs_fix": pass_needs_fix,
+            "comment": pass_comment,
+            "state": pass_state,
+        }
+    except FileNotFoundError as e:
+        ubuntu_results["password"] = {
+            "needs_fix": True,
+            "comment": "PasswordAuthentication not found.",
+            "state": f"Action required, {e}",
+        }
 
     # Verifying Firewall status via UFW
-    ubuntu_ufw = subprocess.run(["ufw", "status"], capture_output=True, text=True)
-    print("Firewall status:", ubuntu_ufw.stdout, file=sys.stderr)
+    try:
+        ubuntu_ufw = subprocess.run(["ufw", "status"], capture_output=True, text=True)
+        print("Firewall status:", ubuntu_ufw.stdout, file=sys.stderr)
 
-    if "active" in ubuntu_ufw.stdout:
-        firewall_status = "Pass"
-    else:
-        firewall_status = "Fail"
+        if "active" in ubuntu_ufw.stdout:
+            ufw_needs_fix = False
+            ufw_comment = "ufw enabled."
+            ufw_active_state = "Firewall active (running)"
+        else:
+            ufw_needs_fix = True
+            ufw_comment = "ufw disabled."
+            ufw_active_state = "Firewall inactive (dead)"
 
-    ubuntu_results["firewall"] = firewall_status
+        ubuntu_results["firewall"] = {
+            "needs_fix": ufw_needs_fix,
+            "comment": ufw_comment,
+            "state": ufw_active_state,
+        }
+
+    except FileNotFoundError as e:
+        ubuntu_results["firewall"] = {
+            "needs_fix": True,
+            "comment": f"ufw not found {e}",
+            "state": "Error",
+        }
 
     # Checking restictiveness of file permissions for /etc/shadow
     try:
@@ -66,15 +118,25 @@ def ubuntu_checklist():
         ubuntu_restrict = oct(ubuntu_perm.st_mode)[-3:]
         print("Permissions:", ubuntu_restrict, file=sys.stderr)
         if "600" in ubuntu_restrict:
-            print("Pass", file=sys.stderr)
+            perm_needs_fix = False
+            perm_comment = "Restrictions correct"
+            perm_state = "No further action required."
         else:
-            print(
-                "Fail, possible secuirty breach, due to file accessible for many groups/users.",
-                file=sys.stderr,
-            )
-        ubuntu_results["restrict"] = ubuntu_restrict
+            perm_needs_fix = True
+            perm_comment = "Restrictions incorrect, please review it and adjust them as per documentation."
+            perm_state = "Further action required."
+
+        ubuntu_results["restrict"] = {
+            "needs_fix": perm_needs_fix,
+            "comment": perm_comment,
+            "state": perm_state,
+        }
     except PermissionError as e:
-        ubuntu_results["restrict"] = f"Error, access denied, {e}."
+        ubuntu_results["restrict"] = {
+            "needs_fix": True,
+            "comment": f"Cannot acces /etc/shadow {e}",
+            "state": "Error",
+        }
 
     # Checking fail2ban service operational state
     try:
@@ -83,47 +145,81 @@ def ubuntu_checklist():
         )
         print("File2ban status:", ubuntu_fail2ban.stdout, file=sys.stderr)
         ubuntu_split = ubuntu_fail2ban.stdout.splitlines()
+
         if "could not be found" in ubuntu_fail2ban.stderr:
-            fail2ban_status = "Unit fail2ban.service could not be found."
+            fail2ban_needs_fix = True
+            fail2ban_comment = "Unit fail2ban.service could not be found."
+            fail2ban_active_state = "not installed"
         else:
             print("Fail2ban installed.", file=sys.stderr)
+            fail2ban_needs_fix = True
+            fail2ban_comment = (
+                "Could not determine fail2ban status from systemctl output."
+            )
+            fail2ban_active_state = "Unknown"
 
             for line in ubuntu_split:
                 if "active" in line.lower():
                     if "active (running)" in line.lower():
-                        fail2ban_status = "Fail2ban active"
+                        fail2ban_needs_fix = False
+                        fail2ban_comment = "Unit fail2ban.service installed."
+                        fail2ban_active_state = "Fail2ban active"
                     else:
-                        fail2ban_status = "Fail2ban inactive (dead), possible security issue. Please enable service."
+                        fail2ban_needs_fix = True
+                        fail2ban_comment = (
+                            "Unit fail2ban.service installed but inactive."
+                        )
+                        fail2ban_active_state = "Fail2ban inactive (dead)."
                     break
-        ubuntu_results["fail2ban"] = fail2ban_status
-    except FileNotFoundError:
-        ubuntu_results["fail2ban"] = (
-            "Error - systemctl could not be found or it is damaged."
-        )
+
+        ubuntu_results["fail2ban"] = {
+            "needs_fix": fail2ban_needs_fix,
+            "comment": fail2ban_comment,
+            "state": fail2ban_active_state,
+        }
+    except FileNotFoundError as e:
+        ubuntu_results["fail2ban"] = {
+            "needs_fix": True,
+            "comment": f"fail2ban not found {e}",
+            "state": "Error",
+        }
 
     # Checking system update availability
     ubuntu_update = subprocess.run(
         ["apt", "list", "--upgradable"], capture_output=True, text=True
     )
     if ubuntu_update.stdout == "":
-        update_status = "OS updated"
+        update_needs_fix = False
+        update_comment = "OS updated"
+        update_status = "No further action required."
     else:
+        update_needs_fix = True
+        update_comment = "There are updates available."
         update_list = ubuntu_update.stdout.splitlines()
-        update_status = len(update_list) - 1
+        update_status = len(update_list)
 
-    ubuntu_results["update"] = update_status
+    ubuntu_results["update"] = {
+        "needs_fix": update_needs_fix,
+        "comment": update_comment,
+        "state": update_status,
+    }
 
     # Checking if the 'consultant' account has an expiration date set
     ubuntu_accexpiry = subprocess.run(
         ["chage", "-l", "consultant"], capture_output=True, text=True
     )
-    consultant_status = "Could not determin expiration status."
+    consultant_needs_fix = True
+    consultant_comment = "Could not determin expiration status."
+    consultant_status = "Action required, please check if account exists."
+
     ubuntu_accsplit = ubuntu_accexpiry.stdout.splitlines()
     ubuntu_now = datetime.datetime.now()
     for line in ubuntu_accsplit:
         if "account expires" in line.lower():
             if "never" in line.lower():
-                consultant_status = "Pass. Account never expires."
+                consultant_needs_fix = True
+                consultant_comment = "Fail. Account never expires."
+                consultant_status = "Please set an expiration date."
             else:
                 ubuntu_colon = line.split(":")
                 ubuntu_index = ubuntu_colon[1]
@@ -132,10 +228,18 @@ def ubuntu_checklist():
                     ubuntu_split, "%b %d, %Y"
                 )
                 if ubuntu_consultant >= ubuntu_now:
+                    consultant_needs_fix = False
+                    consultant_comment = "Pass. Account has expiration date set."
                     consultant_status = f"Account expiration date:{ubuntu_consultant}"
                 else:
+                    consultant_needs_fix = False
+                    consultant_comment = "Please check the account and if has expired, please remove it from our system."
                     consultant_status = f"Account expired:{ubuntu_consultant}"
-    ubuntu_results["consultant"] = consultant_status
+    ubuntu_results["consultant"] = {
+        "needs_fix": consultant_needs_fix,
+        "comment": consultant_comment,
+        "state": consultant_status,
+    }
 
     return ubuntu_results
 
@@ -148,9 +252,27 @@ def centos_checklist():
     # Checking access and permissions for SSH and OS configuration
     try:
         centos_sshd = file_verify(SSHD_FILEPATH, "PermitRootLogin", "no")
-        centos_results["sshd"] = centos_sshd
-    except FileNotFoundError:
-        centos_results["sshd"] = MISSING_FILE
+        if centos_sshd == "Pass":
+            sshd_needs_fix = False
+            sshd_comment = "PermitRootLogin turned off."
+            sshd_state = "No further action required."
+
+        else:
+            sshd_needs_fix = True
+            sshd_comment = "PermitRootLogin turned on."
+            sshd_state = "Action required."
+
+        centos_results["sshd"] = {
+            "needs_fix": sshd_needs_fix,
+            "comment": sshd_comment,
+            "state": sshd_state,
+        }
+    except FileNotFoundError as e:
+        centos_results["sshd"] = {
+            "needs_fix": True,
+            "comment": "PermitRootLogin not found.",
+            "state": f"Action required, {e}",
+        }
 
     try:
         centos = file_verify("/etc/os-release", "NAME", "CentOS")
@@ -160,31 +282,82 @@ def centos_checklist():
 
     try:
         centos_pass = file_verify(SSHD_FILEPATH, "PasswordAuthentication", "no")
-        centos_results["password"] = centos_pass
-    except FileNotFoundError:
-        centos_results["password"] = MISSING_FILE
+        if centos_pass == "Pass":
+            pass_needs_fix = False
+            pass_comment = "PasswordAuthentication turned off."
+            pass_state = "No further action required."
+        else:
+            pass_needs_fix = True
+            pass_comment = "PasswordAuthentication turned on."
+            pass_state = "Action required."
+
+        centos_results["password"] = {
+            "needs_fix": pass_needs_fix,
+            "comment": pass_comment,
+            "state": pass_state,
+        }
+    except FileNotFoundError as e:
+        centos_results["password"] = {
+            "needs_fix": True,
+            "comment": "PasswordAuthentication not found.",
+            "state": f"Action required, {e}",
+        }
 
     # Verifying Firewall status via firewalld
-    centos_firewalld = subprocess.run(
-        ["systemctl", "status", "firewalld"], capture_output=True, text=True
-    )
-    print("Firewall status:", centos_firewalld.stdout, file=sys.stderr)
+    try:
+        centos_firewalld = subprocess.run(
+            ["systemctl", "status", "firewalld"], capture_output=True, text=True
+        )
+        print("Firewall status:", centos_firewalld.stdout, file=sys.stderr)
 
-    if "active" in centos_firewalld.stdout:
-        firewall_status = "Pass"
-    else:
-        firewall_status = "Fail"
+        if "active (running)" in centos_firewalld.stdout:
+            firewalld_needs_fix = False
+            firewalld_comment = "firewalld enabled."
+            firewalld_active_state = "Firewall active (running)"
+        else:
+            firewalld_needs_fix = True
+            firewalld_comment = "firewalld disabled."
+            firewalld_active_state = "Firewall inactive (dead)"
 
-    centos_results["firewall"] = firewall_status
+        centos_results["firewall"] = {
+            "needs_fix": firewalld_needs_fix,
+            "comment": firewalld_comment,
+            "state": firewalld_active_state,
+        }
+
+    except FileNotFoundError as e:
+        centos_results["firewall"] = {
+            "needs_fix": True,
+            "comment": f"firewalld not found {e}",
+            "state": "Error",
+        }
 
     # Checking restictiveness of file permissions for /etc/shadow
     try:
         centos_shadow = Path("/etc/shadow")
         centos_perm = os.stat(centos_shadow)
         centos_restrict = oct(centos_perm.st_mode)[-3:]
-        centos_results["restrict"] = centos_restrict
+        if "600" in centos_restrict:
+            perm_needs_fix = False
+            perm_comment = "Restrictions correct"
+            perm_state = "No further action required."
+        else:
+            perm_needs_fix = True
+            perm_comment = "Restrictions incorrect, please review it and adjust them as per documentation."
+            perm_state = "Further action required."
+
+        centos_results["restrict"] = {
+            "needs_fix": perm_needs_fix,
+            "comment": perm_comment,
+            "state": perm_state,
+        }
+
     except PermissionError as e:
-        centos_results["restrict"] = f"Error, access denied, {e}."
+        centos_results["restrict"] = {
+            "needs_fix": True,
+            "comment": f"Cannot acces /etc/shadow {e}",
+            "state": "Error",
+        }
 
     # Checking fail2ban service operational state
     try:
@@ -194,22 +367,41 @@ def centos_checklist():
         print("File2ban status:", centos_fail2ban.stdout, file=sys.stderr)
         centos_split = centos_fail2ban.stdout.splitlines()
         if "could not be found" in centos_fail2ban.stderr:
-            fail2ban_status = "Unit fail2ban.service could not be found."
+            fail2ban_needs_fix = True
+            fail2ban_comment = "Unit fail2ban.service could not be found."
+            fail2ban_active_state = "not installed"
         else:
             print("Fail2ban installed.", file=sys.stderr)
+            fail2ban_needs_fix = True
+            fail2ban_comment = (
+                "Could not determine fail2ban status from systemctl output."
+            )
+            fail2ban_active_state = "Unknown"
 
             for line in centos_split:
                 if "active" in line.lower():
                     if "active (running)" in line.lower():
-                        fail2ban_status = "Fail2ban active"
+                        fail2ban_needs_fix = False
+                        fail2ban_comment = "Unit fail2ban.service installed."
+                        fail2ban_active_state = "Fail2ban active"
                     else:
-                        fail2ban_status = "Fail2ban inactive (dead), possible security issue. Please enable service."
+                        fail2ban_needs_fix = True
+                        fail2ban_comment = (
+                            "Unit fail2ban.service installed but inactive."
+                        )
+                        fail2ban_active_state = "Fail2ban inactive (dead)."
                     break
-        centos_results["fail2ban"] = fail2ban_status
-    except FileNotFoundError:
-        centos_results["fail2ban"] = (
-            "Unit fail2ban.service could not be found. Please install fail2ban service."
-        )
+        centos_results["fail2ban"] = {
+            "needs_fix": fail2ban_needs_fix,
+            "comment": fail2ban_comment,
+            "state": fail2ban_active_state,
+        }
+    except FileNotFoundError as e:
+        centos_results["fail2ban"] = {
+            "needs_fix": True,
+            "comment": f"fail2ban not found {e}",
+            "state": "Error",
+        }
 
     # Checking system update availability via security channel
     centos_update = subprocess.run(
@@ -218,26 +410,40 @@ def centos_checklist():
     print("Update status:", centos_update.stdout, file=sys.stderr)
 
     if centos_update.returncode == 0:
-        update_status = "OS updated"
+        update_needs_fix = False
+        update_comment = "OS updated"
+        update_status = "No further action required."
     elif centos_update.returncode == 1:
-        update_status = "Failed during checking process."
+        update_needs_fix = False
+        update_comment = "Failed during checking process."
+        update_status = "Please check your operating system."
     else:
+        update_needs_fix = True
+        update_comment = "There are updates available."
         update_list = centos_update.stdout.splitlines()
         update_status = len(update_list)
 
-    centos_results["update"] = update_status
+    centos_results["update"] = {
+        "needs_fix": update_needs_fix,
+        "comment": update_comment,
+        "state": update_status,
+    }
 
     # Checking if the 'consultant' account has an expiration date set
     centos_accexpiry = subprocess.run(
         ["chage", "-l", "consultant"], capture_output=True, text=True
     )
-    consultant_status = "Could not determin expiration status."
+    consultant_needs_fix = True
+    consultant_comment = "Could not determin expiration status."
+    consultant_status = "Action required, please check if account exists."
     centos_accsplit = centos_accexpiry.stdout.splitlines()
     centos_now = datetime.datetime.now()
     for line in centos_accsplit:
         if "account expires" in line.lower():
             if "never" in line.lower():
-                consultant_status = "Pass. Account never expires."
+                consultant_needs_fix = True
+                consultant_comment = "Fail. Account never expires."
+                consultant_status = "Please set an expiration date."
             else:
                 centos_colon = line.split(":")
                 centos_index = centos_colon[1]
@@ -246,10 +452,19 @@ def centos_checklist():
                     centos_split, "%b %d, %Y"
                 )
                 if centos_consultant >= centos_now:
+                    consultant_needs_fix = False
+                    consultant_comment = "Pass. Account has expiration date set."
                     consultant_status = f"Account expiration date:{centos_consultant}"
                 else:
+                    consultant_needs_fix = False
+                    consultant_comment = "Please check the account and if has expired, please remove it from our system."
                     consultant_status = f"Account expired:{centos_consultant}"
-    centos_results["consultant"] = consultant_status
+
+    centos_results["consultant"] = {
+        "needs_fix": consultant_needs_fix,
+        "comment": consultant_comment,
+        "state": consultant_status,
+    }
 
     return centos_results
 

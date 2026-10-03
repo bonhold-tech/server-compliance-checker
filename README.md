@@ -25,6 +25,12 @@ into a single, repeatable script that adapts itself to whichever OS it's running
    the EPEL repository - the check accounts for this)
 6. **Pending security updates** - `apt list --upgradable` (Ubuntu) / `dnf check-update
    --security` (CentOS)
+
+   > **Known issue (Ubuntu):** `apt list --upgradable` always prints a header line
+   > (`Listing... Done`) to stdout, even when no packages are upgradable. The current
+   > check doesn't filter this out, so `update` can report a false positive
+   > (`needs_fix: true`, with a count of 1) on a fully up-to-date Ubuntu system.
+   > Not yet fixed - left as a known limitation.
 7. **Expired temporary accounts** - flags any account past its expiration date
    (`chage`) that should have already been locked out
 
@@ -41,40 +47,6 @@ sudo python3 checker.py              # report mode (prints to screen)
 sudo python3 checker.py --fix        # attempts safe automatic remediation
 sudo python3 checker.py --json       # exports the report to report-<timestamp>.json
 sudo python3 checker.py --notify     # emails the report (requires .env configuration)
-```
-
-## Example output
-
-```
-[OS Detected: Ubuntu]
-====================================
- SERVER COMPLIANCE AUDIT
-====================================
-[✓] Firewall (ufw): active
-[✗] SSH root login: permitted (should be disabled)
-[✓] SSH password authentication: disabled
-[✓] /etc/shadow permissions: 0600
-[✗] fail2ban: not installed
-[✓] Security updates: up to date
-[✓] Temporary accounts: none expired
-====================================
-5 passed / 2 failed
-```
-
-```
-[OS Detected: CentOS]
-====================================
- SERVER COMPLIANCE AUDIT
-====================================
-[✓] Firewall (firewalld): active
-[✓] SSH root login: disabled
-[✓] SSH password authentication: disabled
-[✓] /etc/shadow permissions: 0600
-[✗] fail2ban: EPEL repo not enabled, service not found
-[✓] Security updates: up to date
-[✓] Temporary accounts: none expired
-====================================
-6 passed / 1 failed
 ```
 
 ## Environment
@@ -105,9 +77,10 @@ server-compliance-checker/
 ├── .gitignore
 ├── LICENSE
 ├── README.md
-├── checker.py          # entry point - CLI args, orchestration + OS detection
-├── audit.py             # shared audit logic and commands for Ubuntu and CentOS
-└── Vagrantfile             # multi-VM setup (Ubuntu + CentOS) to reproduce the test environment
+└── MultiVM/
+    ├── checker.py          # entry point - CLI args, orchestration + OS detection
+    ├── audit.py            # shared audit logic and commands for Ubuntu and CentOS
+    └── Vagrantfile         # multi-VM setup (Ubuntu + CentOS) to reproduce the test environment
 ```
 
 ## Security notes

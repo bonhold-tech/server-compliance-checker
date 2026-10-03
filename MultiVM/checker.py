@@ -1,14 +1,14 @@
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 import subprocess
 import sys
 import json
 import datetime
 import os
 import smtplib
+
 from pathlib import Path
 from audit import ubuntu_checklist
 from audit import centos_checklist
-from dotenv import load_dotenv
 from email.mime.text import MIMEText
 
 
@@ -35,6 +35,7 @@ if "--inside-vm" in sys.argv:
 
     if "ubuntu" in distro:
         results = ubuntu_checklist()
+
     elif "centos" in distro or "rhel" in distro:
         results = centos_checklist()
     else:
@@ -85,6 +86,14 @@ else:
         capture_output=True,
         text=True,
     )
+    print(
+        "STDOUT:",
+        db01_json.stdout,
+        "STDERR:",
+        db01_json.stderr,
+        "RETURNCODE:",
+        db01_json.returncode,
+    )
     db01_output = json.loads(db01_json.stdout)
 
     # 3. Creating nested dictionary with outputs form VM's
@@ -110,6 +119,8 @@ else:
     print("\nAll virtual environments audited successfully.")
 
     if "--notify" in sys.argv:
+        from dotenv import load_dotenv
+
         dotenv_file = Path(__file__)
         vm_file = dotenv_file.parent
         env_file = vm_file.parent / ".env"
@@ -135,3 +146,127 @@ else:
             print("Message sent!")
 
         send_email(subject, body, sender, recipients, password)
+
+    if "--fix" in sys.argv:
+        now = datetime.datetime.now()
+        timestamp = now.strftime("%b-%d-%Y")
+        with open(
+            f"/home/mateusz/DATA/gitrepos/server-compliance-checker/MultiVM/audit_reports/{timestamp} audit_report.json",
+            "r",
+        ) as read_content:
+            results = json.load(read_content)
+        for key, value in results.items():
+            for args, item in value.items():
+                for x, y in item.items():
+                    if isinstance(y, dict) and y["needs_fix"] == True:
+                        if x == "firewall":
+                            if key == "web01":
+                                firewall = subprocess.run(
+                                    [
+                                        "vagrant",
+                                        "ssh",
+                                        key,
+                                        "-c",
+                                        "sudo ufw allow 22/tcp && sudo ufw --force enable",
+                                    ],
+                                    capture_output=True,
+                                    text=True,
+                                )
+                            elif key == "db01":
+                                firewall = subprocess.run(
+                                    [
+                                        "vagrant",
+                                        "ssh",
+                                        key,
+                                        "-c",
+                                        "sudo systemctl enable --now firewalld",
+                                    ],
+                                    capture_output=True,
+                                    text=True,
+                                )
+                        elif x == "fail2ban":
+                            if key == "web01":
+                                fail2ban = subprocess.run(
+                                    [
+                                        "vagrant",
+                                        "ssh",
+                                        key,
+                                        "-c",
+                                        "sudo DEBIAN_FRONTEND=noninteractive apt install fail2ban -y && sudo systemctl enable --now fail2ban",
+                                    ],
+                                    capture_output=True,
+                                    text=True,
+                                )
+                            elif key == "db01":
+                                db01 = subprocess.run(
+                                    [
+                                        "vagrant",
+                                        "ssh",
+                                        key,
+                                        "-c",
+                                        "sudo dnf install epel-release -y && sudo dnf install fail2ban -y && sudo systemctl enable --now fail2ban",
+                                    ],
+                                    capture_output=True,
+                                    text=True,
+                                )
+                        elif x == "sshd":
+                            sshd = subprocess.run(
+                                [
+                                    "vagrant",
+                                    "ssh",
+                                    key,
+                                    "-c",
+                                    "sudo sed -i.bak -E 's/^#?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config",
+                                ],
+                                capture_output=True,
+                                text=True,
+                            )
+                        elif x == "password":
+                            authenticator = subprocess.run(
+                                [
+                                    "vagrant",
+                                    "ssh",
+                                    key,
+                                    "-c",
+                                    "sudo sed -i.bak -E 's/^#?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config",
+                                ],
+                                capture_output=True,
+                                text=True,
+                            )
+                        elif x == "restrict":
+                            shadow = subprocess.run(
+                                [
+                                    "vagrant",
+                                    "ssh",
+                                    key,
+                                    "-c",
+                                    "sudo chmod 600 /etc/shadow",
+                                ],
+                                capture_output=True,
+                                text=True,
+                            )
+                        elif x == "update":
+                            if key == "web01":
+                                update = subprocess.run(
+                                    [
+                                        "vagrant",
+                                        "ssh",
+                                        key,
+                                        "-c",
+                                        "sudo DEBIAN_FRONTEND=noninteractive apt update && sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y",
+                                    ],
+                                    capture_output=True,
+                                    text=True,
+                                )
+                            elif key == "db01":
+                                update = subprocess.run(
+                                    [
+                                        "vagrant",
+                                        "ssh",
+                                        key,
+                                        "-c",
+                                        "sudo dnf upgrade -y",
+                                    ],
+                                    capture_output=True,
+                                    text=True,
+                                )
