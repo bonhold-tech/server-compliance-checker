@@ -1,4 +1,4 @@
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 import os
 import subprocess
 import datetime
@@ -88,15 +88,26 @@ def ubuntu_checklist():
     try:
         ubuntu_ufw = subprocess.run(["ufw", "status"], capture_output=True, text=True)
         print("Firewall status:", ubuntu_ufw.stdout, file=sys.stderr)
-
-        if "active" in ubuntu_ufw.stdout:
-            ufw_needs_fix = False
-            ufw_comment = "ufw enabled."
-            ufw_active_state = "Firewall active (running)"
+        if ubuntu_ufw.returncode != 0 or not ubuntu_ufw.stdout.strip():
+            ufw_needs_fix = None
+            ufw_comment = ubuntu_ufw.stderr
+            ufw_active_state = "unknown value."
         else:
-            ufw_needs_fix = True
-            ufw_comment = "ufw disabled."
-            ufw_active_state = "Firewall inactive (dead)"
+            first = ubuntu_ufw.stdout.splitlines()[0]
+            value = first.split(":", 1)[-1].strip()
+
+            if value == "active":
+                ufw_needs_fix = False
+                ufw_comment = "ufw enabled."
+                ufw_active_state = "Firewall active (running)"
+            elif value == "inactive":
+                ufw_needs_fix = True
+                ufw_comment = "ufw disabled."
+                ufw_active_state = "Firewall inactive (dead)"
+            else:
+                ufw_needs_fix = None
+                ufw_comment = "ufw status not recognised."
+                ufw_active_state = value
 
         ubuntu_results["firewall"] = {
             "needs_fix": ufw_needs_fix,
