@@ -1,4 +1,4 @@
-__version__ = "0.2.7"
+__version__ = "0.2.8"
 import os
 import subprocess
 import datetime
@@ -29,60 +29,63 @@ def file_verify(filepath, expected_line, expected_value):
 def ubuntu_checklist():
     """Execute the full security compliance audit checklist tailored for Ubuntu systems."""
     ubuntu_results = {}
-    # Checking access and permissions for SSH and OS configuration
+
+    # Read the effective sshd configuration once.
+    # sshd -T applies Include files and the "first obtained value wins" rule,
+    # so the result matches what the running server actually uses.
+    sshd_options = {}
+    sshd_error = None
     try:
-        ubuntu_sshd = file_verify(SSHD_FILEPATH, "PermitRootLogin", "no")
-        if ubuntu_sshd == "Pass":
-            sshd_needs_fix = False
-            sshd_comment = "PermitRootLogin turned off."
-            sshd_state = "No further action required."
-
+        sshd_t = subprocess.run(["sshd", "-T"], capture_output=True, text=True)
+        if sshd_t.returncode != 0 or not sshd_t.stdout.strip():
+            sshd_error = sshd_t.stderr.strip() or "sshd -T returned no output."
         else:
-            sshd_needs_fix = True
-            sshd_comment = "PermitRootLogin turned on."
-            sshd_state = "Action required."
-
-        ubuntu_results["sshd"] = {
-            "needs_fix": sshd_needs_fix,
-            "comment": sshd_comment,
-            "state": sshd_state,
-        }
-
+            for line in sshd_t.stdout.splitlines():
+                parts = line.split(maxsplit=1)
+                if len(parts) == 2:
+                    sshd_options[parts[0]] = parts[1].strip()
     except FileNotFoundError as e:
-        ubuntu_results["sshd"] = {
-            "needs_fix": True,
-            "comment": "PermitRootLogin not found.",
-            "state": f"Action required, {e}",
+        sshd_error = f"sshd not found: {e}"
+
+    # Report keys must match the --fix handlers in checker.py:
+    # "sshd" -> PermitRootLogin, "password" -> PasswordAuthentication
+    sshd_checks = {
+        "sshd": ("permitrootlogin", "PermitRootLogin"),
+        "password": ("passwordauthentication", "PasswordAuthentication"),
+    }
+
+    for report_key, (option, label) in sshd_checks.items():
+        value = sshd_options.get(option)
+
+        if sshd_error:
+            needs_fix = None
+            comment = f"Could not read effective sshd config: {sshd_error}"
+            state = "Unknown"
+        elif value is None:
+            needs_fix = None
+            comment = f"{label} not found in sshd -T output."
+            state = "Unknown"
+        elif value == "no":
+            needs_fix = False
+            comment = f"{label} turned off."
+            state = "No further action required."
+        else:
+            needs_fix = True
+            comment = f"{label} is set to '{value}'."
+            state = "Action required."
+
+        ubuntu_results[report_key] = {
+            "needs_fix": needs_fix,
+            "comment": comment,
+            "state": state,
         }
 
+    # Checking OS identity
     try:
         ubuntu_os = file_verify("/etc/os-release", "NAME", "Ubuntu")
         ubuntu_results["os"] = ubuntu_os
     except FileNotFoundError:
         ubuntu_results["os"] = MISSING_FILE
-
-    try:
-        ubuntu_pass = file_verify(SSHD_FILEPATH, "PasswordAuthentication", "no")
-        if ubuntu_pass == "Pass":
-            pass_needs_fix = False
-            pass_comment = "PasswordAuthentication turned off."
-            pass_state = "No further action required."
-        else:
-            pass_needs_fix = True
-            pass_comment = "PasswordAuthentication turned on."
-            pass_state = "Action required."
-
-        ubuntu_results["password"] = {
-            "needs_fix": pass_needs_fix,
-            "comment": pass_comment,
-            "state": pass_state,
-        }
-    except FileNotFoundError as e:
-        ubuntu_results["password"] = {
-            "needs_fix": True,
-            "comment": "PasswordAuthentication not found.",
-            "state": f"Action required, {e}",
-        }
 
     # Verifying Firewall status via UFW
     try:
