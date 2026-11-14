@@ -1,4 +1,4 @@
-__version__ = "0.2.8"
+__version__ = "0.2.9"
 import os
 import subprocess
 import datetime
@@ -219,36 +219,51 @@ def ubuntu_checklist():
     }
 
     # Checking if the 'consultant' account has an expiration date set
+    ubuntu_env = dict(os.environ, LC_ALL="C")
     ubuntu_accexpiry = subprocess.run(
-        ["chage", "-l", "consultant"], capture_output=True, text=True
+        ["chage", "-l", "consultant"], capture_output=True, text=True, env=ubuntu_env
     )
     consultant_needs_fix = True
     consultant_comment = "Could not determin expiration status."
     consultant_status = "Action required, please check if account exists."
-
-    ubuntu_accsplit = ubuntu_accexpiry.stdout.splitlines()
-    ubuntu_now = datetime.datetime.now()
-    for line in ubuntu_accsplit:
-        if "account expires" in line.lower():
-            if "never" in line.lower():
-                consultant_needs_fix = True
-                consultant_comment = "Fail. Account never expires."
-                consultant_status = "Please set an expiration date."
-            else:
-                ubuntu_colon = line.split(":")
-                ubuntu_index = ubuntu_colon[1]
-                ubuntu_split = ubuntu_index.strip()
-                ubuntu_consultant = datetime.datetime.strptime(
-                    ubuntu_split, "%b %d, %Y"
-                )
-                if ubuntu_consultant >= ubuntu_now:
-                    consultant_needs_fix = False
-                    consultant_comment = "Pass. Account has expiration date set."
-                    consultant_status = f"Account expiration date:{ubuntu_consultant}"
+    if ubuntu_accexpiry.returncode != 0 or not ubuntu_accexpiry.stdout.strip():
+        consultant_needs_fix = None
+        consultant_comment = ubuntu_accexpiry.stderr
+        consultant_status = "unknown value."
+    else:
+        ubuntu_accsplit = ubuntu_accexpiry.stdout.splitlines()
+        ubuntu_now = datetime.datetime.now()
+        for line in ubuntu_accsplit:
+            if "account expires" in line.lower():
+                if "never" in line.lower():
+                    consultant_needs_fix = True
+                    consultant_comment = "Fail. Account never expires."
+                    consultant_status = "Please set an expiration date."
                 else:
-                    consultant_needs_fix = False
-                    consultant_comment = "Please check the account and if has expired, please remove it from our system."
-                    consultant_status = f"Account expired:{ubuntu_consultant}"
+                    try:
+                        ubuntu_colon = line.split(":")
+                        ubuntu_index = ubuntu_colon[1]
+                        ubuntu_split = ubuntu_index.strip()
+                        ubuntu_consultant = datetime.datetime.strptime(
+                            ubuntu_split, "%b %d, %Y"
+                        )
+                        if ubuntu_consultant >= ubuntu_now:
+                            consultant_needs_fix = False
+                            consultant_comment = (
+                                "Pass. Account has expiration date set."
+                            )
+                            consultant_status = (
+                                f"Account expiration date:{ubuntu_consultant}"
+                            )
+                        else:
+                            consultant_needs_fix = True
+                            consultant_comment = "Please check the account and if has expired, please remove it from our system."
+                            consultant_status = f"Account expired:{ubuntu_consultant}"
+                    except ValueError as e:
+                        consultant_needs_fix = None
+                        consultant_comment = f"Invalid date format in {e}"
+                        consultant_status = "Error"
+
     ubuntu_results["consultant"] = {
         "needs_fix": consultant_needs_fix,
         "comment": consultant_comment,
